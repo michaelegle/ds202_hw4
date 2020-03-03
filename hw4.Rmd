@@ -1,0 +1,183 @@
+---
+title: "Homework 4"
+author: "Michael Egle; GitHub: michaelegle"
+date: "3/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Chick weights
+
+The `ChickWeight` data set is part of the base package `datasets`. See `?ChickWeight` for details on the data.
+For all of the questions use `dplyr` functions with the pipe `%>%` whenever possible.
+
+**Submission instructions**: Create a folder named `ds202_hw4`, and name the RMarkDown file including your solutions `hw4.Rmd` under this folder. For the submission, create a GitHub repository named `ds202_hw4` under your GitHub account, and push both `hw4.Rmd` and the knitted `hw4.html` before the deadline. I will assume you use the same GitHub username as for your HW3 submission. The latest version of your homework appearing on GitHub before the deadline is graded. *It is crucial to follow the exact folder structure and file names*. This homework is **due on March 4** before class.
+
+1. Get a frequency breakdown of the number of chicks, their average weight and the standard deviation of the weights in each of the diets at the start of the study. Store the resulting data frame in a variable named `weight0` and print.<br>
+<!-- 5 pts of extra credit: construct a ggplot that shows average weights by diet with an interval (shown as a line) of +- the standard deviation around the averages. -->
+
+```{r}
+weight0 <- ChickWeight %>%
+  filter(Time == 0) %>%
+  summarize(num = n(), avg_weight = mean(weight), sd_weight = sd(weight))
+
+weight0
+```
+There are 50 chicks, their average weight is 41.06 gm and the standard deviation is 1.1322 gm
+
+
+2. Each chick should have twelve weight measurements. Use the `dplyr` package to identify how many measurements are there for each chick. Extract a subset of the data for all chicks with complete information, name the data set `complete`, and print the first 3 rows. (Hint: you might want to use mutate to introduce a helper variable consisting of the number of observations)
+
+```{r}
+ChickWeight %>%
+  group_by(Chick) %>%
+  summarize(measurements = n()) -> meas
+
+ChickWeight <- ChickWeight %>%
+  inner_join(meas)
+
+complete <- ChickWeight %>%
+  filter(measurements == 12)
+
+head(complete, 3)
+```
+
+
+3. In the complete data set introduce a new variable that measures the current weight difference compared to day 0. Name this variable  `weightgain` and print the first 3 rows of the new data frame.
+
+```{r}
+init_weights <- complete %>%
+  filter(Time == 0) %>%
+  group_by(Chick) %>%
+  summarize(init_weights = min(weight))
+
+complete <- complete %>%
+  inner_join(init_weights)
+
+complete <- complete %>%
+  mutate(weightgain = weight - init_weights)
+
+head(complete, 3)
+```
+
+
+4. Use `{ggplot2}` to create side-by-side boxplots of `weightgain` by `Diet` for day 21. Change the order of the categories in the Diet variable such that the boxplots are ordered by median `weightgain`, and the lower limit of the y axis should be 0. Describe the relationship in 2-3 sentences. 
+
+```{r}
+complete %>%
+  ggplot(aes(x = reorder(Diet, weightgain, FUN = median), y = weightgain)) +
+  geom_boxplot()
+```
+
+There seems to be some diets that are more effective in gaining weight than others. Diet 1 has the lowest median and IQR by quite a bit. Diets 3 & 4 have pretty close medians but Diet 4 has a more narrow IQR than Diet 3.
+
+
+5. Answer each of the following questions using numerical and graphical summary. Also explain what you found: (a) Which chick gained the most weight and which gained the least weight? (b) What diets were they on?
+
+```{r}
+complete %>%
+  filter(Time == 21) %>%
+  arrange(desc(weightgain)) %>%
+  head()
+```
+
+Chick 35 gained the most weight at +332gm and was on Diet 3.
+
+
+```{r}
+complete %>%
+  filter(Time == 21) %>%
+  arrange(weightgain) %>%
+  head()
+```
+
+Chick 24 lost the least weight at only +32gm from the start and was on Diet 2
+
+```{r}
+complete %>%
+  filter(Time == 21) %>%
+  ggplot(aes(x = Chick, y = weightgain, color = ifelse(Chick == 35 | Chick == 24, "red", "blue"))) +
+  geom_bar(stat = "identity") +
+  theme(legend.position = "none")
+```
+
+Colored blue is the highest fain and the lowest gain in weight, all others are colored red.
+
+6. For the chicks with the least and the most weight at time 0, plot their growth trajectories over time. </br>
+
+```{r}
+minweight <- min(complete$init_weights)
+maxweight <- max(complete$init_weights)
+
+complete <- complete %>%
+  mutate(extreme = ifelse(init_weights == minweight | init_weights == maxweight, 1, 0))
+
+cw_extreme <- complete %>%
+  filter(extreme == 1) %>%
+  select(Time, Chick, weight)
+
+cw_extreme %>%
+  ggplot(aes(x = Time, y = weight, group = Chick, color = Chick)) +
+  geom_line()
+```
+
+
+7. Add to the previous plot the average growth trajectory for all chicks (calculated as the mean weight for each chick at each time). How do the trajectories compare?
+
+```{r}
+cw_average <- complete %>%
+  group_by(Time) %>%
+  summarize(Chick = "avg", weight = mean(weight))
+
+cw_average %>%
+  rbind(cw_extreme) %>%
+  ggplot(aes(x = Time, y = weight, group = Chick, col = Chick)) +
+  geom_line()
+```
+
+
+8. What else do you find interesting in the dataset? Show your exploratory analysis.
+
+Interesting thing I noticed: there are a couple instances where the chick had lost weight from their initial weight. Both of these instances were under Diet 1
+
+```{r}
+complete %>%
+  group_by(Diet, Time) %>%
+  summarize(avg_weight = mean(weight)) %>%
+  ggplot(aes(x = Time, y = avg_weight, group = Diet, color = Diet)) +
+  geom_line()
+```
+
+Here's a look at the average trajectories for each diet. It's clear that Diets 3 and 4 are pretty close for the most part but after about time 13 or 14, Diet 3 surpasses Diet 4 pretty significantly
+
+```{r}
+complete %>%
+  filter(Time == 21) %>%
+  ggplot(aes(x = init_weights, y = weightgain)) +
+  geom_point() +
+  geom_smooth()
+```
+
+There doesn't seem to be much of a trend between the initial weight of the chick and their final weight gained.
+
+```{r}
+complete %>%
+  group_by(Diet) %>%
+  summarize(median_wt = median(init_weights), sd_wt = sd(init_weights))
+```
+
+```{r}
+complete %>%
+  ggplot(aes(x = init_weights)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(Diet ~ .)
+```
+
+
+I looked to see if any diet groups were significantly different from the others in terms of initial weights but it seems that most of them are distributed pretty evenly.
+
+Note: your submission is supposed to be fully reproducible, i.e. the TA and I will 'knit' your submission in RStudio. 
